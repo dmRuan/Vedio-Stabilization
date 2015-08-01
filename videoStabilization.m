@@ -1,23 +1,41 @@
-function [v, fail] = videoStabilization(v, hVideoSrc, fail)
+function v = videoStabilization(v, hVideoSrc)
 
 % initialization
-% videoPlayer	= vision.VideoPlayer;
-nFrames     = v.nFrames;
+nFrames         = hVideoSrc.NumberOfFrames;
+W               = hVideoSrc.height;
+H               = hVideoSrc.width;
+faceDetector	= vision.CascadeObjectDetector('MergeThreshold', 5);
+noseDetector    = vision.CascadeObjectDetector('Nose');
 
 % initialize the first frame
 v(1).cdata  = read(hVideoSrc, 1);
 imgB        = rgb2gray(v(1).cdata);
+
+% translate
+nosebbox	= step(noseDetector, imgB);
+p           = [W/2, H/2];
+q           = [nosebbox(1, 2)+nosebbox(1,4)/2, nosebbox(1,1)+nosebbox(1,3)/2];
+y = p(1)-q(1);
+x = p(2)-q(2);
+se          = translate(strel(1), floor([y x]));
+imgB        = imdilate(imgB, se);
+fig = figure; imshow(imgB); hold on;
+% plot(p(1), p(2), '+');
+% [x, y] = getpts(fig);
+
 v(1).after  = imgB;
+v(1).ans    = v(1).cdata;
 imgA        = imgB;
-% step(videoPlayer, imgB);
 
 % show time
 cnt = 1;
 n = 271;
-faceDetector = vision.CascadeObjectDetector('MergeThreshold', 5);
 for i=2 : nFrames
-    cnt = cnt+1;
-    disp(cnt);
+    cnt     = cnt+1;
+    ratio	= uint8((cnt/nFrames)*100);
+    clc;
+    X       = [num2str(ratio), '%'];
+    disp(X);
     v(i).cdata	= read(hVideoSrc, i);
     imgB        = rgb2gray(v(i).cdata);
     
@@ -37,8 +55,8 @@ for i=2 : nFrames
     pointsB = [];
     for ii=1 : nbboxA
         for jj=1 : nbboxB            
-            tpointsA	= detectMinEigenFeatures(imgA, 'ROI', bboxA(ii, :), 'MinQuality', 0.001);
-            tpointsB	= detectMinEigenFeatures(imgB, 'ROI', bboxB(jj, :), 'MinQuality', 0.001);
+            tpointsA	= detectMinEigenFeatures(imgA, 'ROI', bboxA(ii, :), 'MinQuality', 0.0001);
+            tpointsB	= detectMinEigenFeatures(imgB, 'ROI', bboxB(jj, :), 'MinQuality', 0.0001);
             % Display the detected points.
         %         figure, imshow(imgA), hold on, title('A');
         %         plot(pointsA);    
@@ -52,28 +70,28 @@ for i=2 : nFrames
             [featuresA, tpointsA]	= extractFeatures(imgA, tpointsA);
             [featuresB, tpointsB]	= extractFeatures(imgB, tpointsB);
 
-            indexPairs	= matchFeatures(featuresA, featuresB);
+            indexPairs	= matchFeatures(featuresA, featuresB, 'MaxRatio',0.7);
             tpointsA     = tpointsA(indexPairs(:, 1), :);
             tpointsB     = tpointsB(indexPairs(:, 2), :);
 
-            % display
-        %         figure; showMatchedFeatures(imgA, imgB, pointsA, pointsB); hold on;
-        %         title('Before');
-        %         legend('A', 'B');
             if( size(tpointsA, 1) > size(pointsA, 1) )
                 pointsA	= tpointsA;
                 pointsB = tpointsB;
             end
         end
     end
+    % display
+%     figure; showMatchedFeatures(imgA, imgB, tpointsA, tpointsB); hold on;
+%     title('Before');
+%     legend('A', 'B');
 
 
     if( size(pointsA, 1) == size(pointsB,1) && size(pointsA, 1) >= 3)
         %%%%%%%%%%%% estimating transform from noisy correspondences %%%%%%%%%%%%
         [tform, pointsBm, pointsAm] = estimateGeometricTransform(...
             pointsB, pointsA, 'affine');
-        imgBp       = imwarp(imgB, tform, 'OutputView', imref2d(size(imgB)));
-        pointsBmp	= transformPointsForward(tform, pointsBm.Location);
+%         imgBp       = imwarp(imgB, tform, 'OutputView', imref2d(size(imgB)));
+%         pointsBmp	= transformPointsForward(tform, pointsBm.Location);
 
         % display
 %         figure;
@@ -97,8 +115,9 @@ for i=2 : nFrames
           translation], [0 0 1]'];
         tformsRT	= affine2d(HsRt);
 
-        imgBold	= imwarp(imgB, tform, 'OutputView', imref2d(size(imgB)));
+%         imgBold	= imwarp(imgB, tform, 'OutputView', imref2d(size(imgB)));
         imgBsRt = imwarp(imgB, tformsRT, 'OutputView', imref2d(size(imgB)));
+        v(i).ans = imwarp(v(i).cdata, tformsRT, 'OutputView', imref2d(size(v(i).cdata)));
 
         % display
 %         figure(2), clf;
@@ -106,15 +125,12 @@ for i=2 : nFrames
 %         title('After');
 
         v(i).after	= imgBsRt;
-%         step(videoPlayer, imgBsRt);
     else
         v(i).after	= imgB;
-%         step(videoPlayer, imgB);
     end
     
     imgA	= v(i).after;
     
-%     close all;
+    close all;
 end
 
-% release(videoPlayer);

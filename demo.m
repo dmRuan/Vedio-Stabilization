@@ -9,14 +9,14 @@ H                   = hVideoSrc.height;
 W                   = hVideoSrc.width;
 Rate                = hVideoSrc.framerate;
 video(1:nFrames)	= struct('cdata',zeros(H,W,3,'uint8'),...
-    'facebbox',zeros(1,4), 'nFrames', nFrames,...
-    'after',zeros(H,W));
-
-for i=1 : nFrames
-    video(i).facebbox(3)	= W;
-    video(i).facebbox(4)	= H;
-end
+    'nFrames', nFrames, 'after',zeros(H,W),...
+    'ans',zeros(H,W,3,'uint8'));
 
 % video = faceTracking(video, hVideoSrc);
 
-[video, fial]	= videoStabilization(video, hVideoSrc, fail);
+video	= videoStabilization(video, hVideoSrc);
+
+createNewVideo;
+
+clc;
+disp('Complete.')
