@@ -1,41 +1,28 @@
-function v = videoStabilization(v, hVideoSrc)
+function [v, fail] = videoStabilization(v, hVideoSrc, fail)
 
 % initialization
+bboxA = []; bboxB = [];
 nFrames         = hVideoSrc.NumberOfFrames;
-W               = hVideoSrc.height;
-H               = hVideoSrc.width;
-faceDetector	= vision.CascadeObjectDetector('MergeThreshold', 5);
-noseDetector    = vision.CascadeObjectDetector('Nose');
+% faceDetector	= vision.CascadeObjectDetector('MergeThreshold', 5);
+% noseDetector    = vision.CascadeObjectDetector('Nose');
 
 % initialize the first frame
 v(1).cdata  = read(hVideoSrc, 1);
 imgB        = rgb2gray(v(1).cdata);
 
 % translate
-nosebbox	= step(noseDetector, imgB);
-p           = [W/2, H/2];
-q           = [nosebbox(1, 2)+nosebbox(1,4)/2, nosebbox(1,1)+nosebbox(1,3)/2];
-y = p(1)-q(1);
-x = p(2)-q(2);
-se          = translate(strel(1), floor([y x]));
-imgB        = imdilate(imgB, se);
-fig = figure; imshow(imgB); hold on;
-% plot(p(1), p(2), '+');
-% [x, y] = getpts(fig);
+facebbox = getfacebbox(imgB);
+imgB = pullNoseMid(imgB, facebbox);
 
 v(1).after  = imgB;
 v(1).ans    = v(1).cdata;
 imgA        = imgB;
 
 % show time
-cnt = 1;
-n = 271;
+cnt = 0;
 for i=2 : nFrames
-    cnt     = cnt+1;
-    ratio	= uint8((cnt/nFrames)*100);
-    clc;
-    X       = [num2str(ratio), '%'];
-    disp(X);
+    dispSchedule(i, nFrames);
+    
     v(i).cdata	= read(hVideoSrc, i);
     imgB        = rgb2gray(v(i).cdata);
     
@@ -46,17 +33,19 @@ for i=2 : nFrames
     
     %%%%%%%%%%%% collect salient points from each frame %%%%%%%%%%%%
     % Detect feature points in the face region.
-    bboxA	= step(faceDetector, imgA);
-    bboxB	= step(faceDetector, imgB);
+    bboxA = getfacebbox(imgA, bboxB);
+    bboxB = getfacebbox(imgB, bboxA);
+%     bboxA	= step(faceDetector, imgA);
+%     bboxB	= step(faceDetector, imgB);
     
-    nbboxA	= size(bboxA, 1);
-    nbboxB	= size(bboxB, 1);
+%     nbboxA	= size(bboxA, 1);
+%     nbboxB	= size(bboxB, 1);
     pointsA = [];
     pointsB = [];
-    for ii=1 : nbboxA
-        for jj=1 : nbboxB            
-            tpointsA	= detectMinEigenFeatures(imgA, 'ROI', bboxA(ii, :), 'MinQuality', 0.0001);
-            tpointsB	= detectMinEigenFeatures(imgB, 'ROI', bboxB(jj, :), 'MinQuality', 0.0001);
+%     for ii=1 : nbboxA
+%         for jj=1 : nbboxB            
+            pointsA	= detectMinEigenFeatures(imgA, 'ROI', bboxA, 'MinQuality', 0.0001);
+            pointsB	= detectMinEigenFeatures(imgB, 'ROI', bboxB, 'MinQuality', 0.0001);
             % Display the detected points.
         %         figure, imshow(imgA), hold on, title('A');
         %         plot(pointsA);    
@@ -67,26 +56,27 @@ for i=2 : nFrames
 
             %%%%%%%%%%%% select correspondences between points %%%%%%%%%%%%
             % Extract FREAK descriptors for the corners
-            [featuresA, tpointsA]	= extractFeatures(imgA, tpointsA);
-            [featuresB, tpointsB]	= extractFeatures(imgB, tpointsB);
+            [featuresA, pointsA]	= extractFeatures(imgA, pointsA);
+            [featuresB, pointsB]	= extractFeatures(imgB, pointsB);
 
             indexPairs	= matchFeatures(featuresA, featuresB, 'MaxRatio',0.7);
-            tpointsA     = tpointsA(indexPairs(:, 1), :);
-            tpointsB     = tpointsB(indexPairs(:, 2), :);
+            pointsA     = pointsA(indexPairs(:, 1), :);
+            pointsB     = pointsB(indexPairs(:, 2), :);
 
-            if( size(tpointsA, 1) > size(pointsA, 1) )
-                pointsA	= tpointsA;
-                pointsB = tpointsB;
-            end
-        end
-    end
+%             if( size(pointsA, 1) > size(pointsA, 1) )
+%                 faceid = jj;
+%                 pointsA	= pointsA;
+%                 pointsB = pointsB;
+%             end
+%         end
+%     end
     % display
 %     figure; showMatchedFeatures(imgA, imgB, tpointsA, tpointsB); hold on;
 %     title('Before');
 %     legend('A', 'B');
 
 
-    if( size(pointsA, 1) == size(pointsB,1) && size(pointsA, 1) >= 3)
+    if( size(pointsA,1) >= 3 )
         %%%%%%%%%%%% estimating transform from noisy correspondences %%%%%%%%%%%%
         [tform, pointsBm, pointsAm] = estimateGeometricTransform(...
             pointsB, pointsA, 'affine');
@@ -117,20 +107,30 @@ for i=2 : nFrames
 
 %         imgBold	= imwarp(imgB, tform, 'OutputView', imref2d(size(imgB)));
         imgBsRt = imwarp(imgB, tformsRT, 'OutputView', imref2d(size(imgB)));
-        v(i).ans = imwarp(v(i).cdata, tformsRT, 'OutputView', imref2d(size(v(i).cdata)));
+        imgBsRt = pullNoseMid(imgBsRt, bboxB);
+        
+        imgsRt      = imwarp(v(i).cdata, tformsRT, 'OutputView', imref2d(size(v(i).cdata)));
+        v(i).ans	= pullNoseMid(imgsRt, bboxB);
+%         v(i).ans(:,:,2)	= pullNoseMid(imgsRt(:,:,2), bboxB);
+%         v(i).ans(:,:,3)	= pullNoseMid(imgsRt(:,:,3), bboxB);
 
         % display
 %         figure(2), clf;
 %         imshowpair(imgBold,imgBsRt,'ColorChannels','red-cyan'), axis image;
 %         title('After');
 
+%         imgBsRt     = pullNoseMid(imgBsRt, faceDetector, noseDetector);
         v(i).after	= imgBsRt;
     else
+        cnt = cnt+1;
+        fail(cnt) = i;
+        imgB	= pullNoseMid(imgB, bboxB);
         v(i).after	= imgB;
+        v(i).ans = imgB;
     end
     
     imgA	= v(i).after;
     
-    close all;
+%     close all;
 end
 
