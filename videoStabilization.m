@@ -1,96 +1,78 @@
-function [v, fail] = videoStabilization(v, hVideoSrc, fail)
+function v = videoStabilization(v, hVideoSrc)
 
-% initialization
-bboxA = []; bboxB = [];
+%% initialization
+bboxB = [];
 nFrames         = hVideoSrc.NumberOfFrames;
-% faceDetector	= vision.CascadeObjectDetector('MergeThreshold', 5);
-% noseDetector    = vision.CascadeObjectDetector('Nose');
 
 % initialize the first frame
 v(1).cdata  = read(hVideoSrc, 1);
 imgB        = rgb2gray(v(1).cdata);
+% translate the image
+facebbox	= getfacebbox(imgB);
+imgB        = pullNoseMid(imgB, facebbox);
+% for iteration
+imgA	= imgB;
 
-% translate
-facebbox = getfacebbox(imgB);
-imgB = pullNoseMid(imgB, facebbox);
+v(1).ans	= pullNoseMid(v(1).cdata, facebbox);
 
-v(1).after  = imgB;
-v(1).ans    = v(1).cdata;
-imgA        = imgB;
 
-% show time
-cnt = 0;
+%% show time
 for i=2 : nFrames
     dispSchedule(i, nFrames);
     
     v(i).cdata	= read(hVideoSrc, i);
     imgB        = rgb2gray(v(i).cdata);
     
-    % display
+%     display
 %     figure; imshowpair(imgA, imgB, 'montage');
 %     title(['Frame A', repmat(' ',[1 70]), 'Frame B']);
 
     
-    %%%%%%%%%%%% collect salient points from each frame %%%%%%%%%%%%
+%% collect salient points from each frame
     % Detect feature points in the face region.
     bboxA = getfacebbox(imgA, bboxB);
-    bboxB = getfacebbox(imgB, bboxA);
-%     bboxA	= step(faceDetector, imgA);
-%     bboxB	= step(faceDetector, imgB);
+    bboxB = getfacebbox(imgB, bboxB);
     
-%     nbboxA	= size(bboxA, 1);
-%     nbboxB	= size(bboxB, 1);
-    pointsA = [];
-    pointsB = [];
-%     for ii=1 : nbboxA
-%         for jj=1 : nbboxB            
-            pointsA	= detectMinEigenFeatures(imgA, 'ROI', bboxA, 'MinQuality', 0.0001);
-            pointsB	= detectMinEigenFeatures(imgB, 'ROI', bboxB, 'MinQuality', 0.0001);
-            % Display the detected points.
-        %         figure, imshow(imgA), hold on, title('A');
-        %         plot(pointsA);    
-        %         figure, imshow(imgB), hold on, title('B');
-        %         plot(pointsB);    
+    pointsA	= detectMinEigenFeatures(imgA, 'ROI', bboxA, 'MinQuality', 0.0001);
+    pointsB	= detectMinEigenFeatures(imgB, 'ROI', bboxB, 'MinQuality', 0.0001);
+%     Display the detected points.
+%         figure, imshow(imgA), hold on, title('A');
+%         plot(pointsA);    
+%         figure, imshow(imgB), hold on, title('B');
+%         plot(pointsB);    
 
 
 
-            %%%%%%%%%%%% select correspondences between points %%%%%%%%%%%%
-            % Extract FREAK descriptors for the corners
-            [featuresA, pointsA]	= extractFeatures(imgA, pointsA);
-            [featuresB, pointsB]	= extractFeatures(imgB, pointsB);
+%% select correspondences between points
+    % Extract FREAK descriptors for the corners
+    [featuresA, pointsA]	= extractFeatures(imgA, pointsA);
+    [featuresB, pointsB]	= extractFeatures(imgB, pointsB);
 
-            indexPairs	= matchFeatures(featuresA, featuresB, 'MaxRatio',0.7);
-            pointsA     = pointsA(indexPairs(:, 1), :);
-            pointsB     = pointsB(indexPairs(:, 2), :);
+    indexPairs	= matchFeatures(featuresA, featuresB, 'MaxRatio',0.7);
+    pointsA     = pointsA(indexPairs(:, 1), :);
+    pointsB     = pointsB(indexPairs(:, 2), :);
 
-%             if( size(pointsA, 1) > size(pointsA, 1) )
-%                 faceid = jj;
-%                 pointsA	= pointsA;
-%                 pointsB = pointsB;
-%             end
-%         end
-%     end
-    % display
+%     display
 %     figure; showMatchedFeatures(imgA, imgB, tpointsA, tpointsB); hold on;
 %     title('Before');
 %     legend('A', 'B');
 
 
+%% estimating transform from noisy correspondences
     if( size(pointsA,1) >= 3 )
-        %%%%%%%%%%%% estimating transform from noisy correspondences %%%%%%%%%%%%
         [tform, pointsBm, pointsAm] = estimateGeometricTransform(...
             pointsB, pointsA, 'affine');
 %         imgBp       = imwarp(imgB, tform, 'OutputView', imref2d(size(imgB)));
 %         pointsBmp	= transformPointsForward(tform, pointsBm.Location);
 
-        % display
+%         display
 %         figure;
 %         showMatchedFeatures(imgA, imgBp, pointsAm, pointsBmp);
 %         legend('A', 'B');
 
 
 
-        %%%%%%%%%%%% transform approximation and smoothing %%%%%%%%%%%%
+%% transform approximation and smoothing
         % Extract scale and rotation part sub-matrix.
         H	= tform.T;
         R	= H(1:2,1:2);
@@ -111,25 +93,20 @@ for i=2 : nFrames
         
         imgsRt      = imwarp(v(i).cdata, tformsRT, 'OutputView', imref2d(size(v(i).cdata)));
         v(i).ans	= pullNoseMid(imgsRt, bboxB);
-%         v(i).ans(:,:,2)	= pullNoseMid(imgsRt(:,:,2), bboxB);
-%         v(i).ans(:,:,3)	= pullNoseMid(imgsRt(:,:,3), bboxB);
 
-        % display
+%         display
 %         figure(2), clf;
 %         imshowpair(imgBold,imgBsRt,'ColorChannels','red-cyan'), axis image;
 %         title('After');
 
-%         imgBsRt     = pullNoseMid(imgBsRt, faceDetector, noseDetector);
-        v(i).after	= imgBsRt;
-    else
-        cnt = cnt+1;
-        fail(cnt) = i;
-        imgB	= pullNoseMid(imgB, bboxB);
-        v(i).after	= imgB;
-        v(i).ans = imgB;
+        after	= imgBsRt;
+    else        
+        imgB        = pullNoseMid(imgB, bboxB);
+        after       = imgB;
+        v(i).ans	= imgB;
     end
     
-    imgA	= v(i).after;
+    imgA	= after;
     
 %     close all;
 end

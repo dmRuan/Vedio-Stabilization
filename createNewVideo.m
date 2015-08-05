@@ -1,4 +1,4 @@
-outputVideo	= VideoWriter('C:\Users\Mindi\Desktop\Image Stabilization\stable_video.avi');
+outputVideo	= VideoWriter('C:\Users\Mindi\Desktop\Image Stabilization\stable_video11(1).avi');
 outputVideo.FrameRate = Rate;
 open(outputVideo)
 
