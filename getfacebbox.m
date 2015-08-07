@@ -1,10 +1,6 @@
-function facebbox = getfacebbox(img, oldbbox)
+function facebbox = getfacebbox(img, thr, lower, upper, oldbbox)
 
-global facecnt;
 
-thr         = 4;
-lower       = 1;
-upper       = 10;
 facebbox	= [];
 nfacebbox	= size(facebbox, 1);
 
@@ -12,12 +8,12 @@ eyeDetector     = vision.CascadeObjectDetector('EyePairBig');
 mouthDetector   = vision.CascadeObjectDetector('Mouth');
 noseDetector    = vision.CascadeObjectDetector('Nose');
 
-while( 1 )
+while( thr >= 0 )
     faceDetector	= vision.CascadeObjectDetector('MergeThreshold',thr);
     facebbox        = step(faceDetector, img);
     
     nfacebbox	= size(facebbox, 1);
-    X = [num2str(thr), num2str(nfacebbox)];
+    X = [num2str(thr), ' ', num2str(nfacebbox)];
     disp(X);
     if( nfacebbox < lower )
         thr = thr-1;
@@ -43,14 +39,10 @@ if( nfacebbox == 1 )
         faceDetector    = vision.CascadeObjectDetector('MergeThreshold',thr-1);
         facebbox    = step(faceDetector, img);
     end
-    B = imcrop(img, facebbox);
-    figure; imshow(B);
-    close all;
 end
 
-facecnt(thr)	= facecnt(thr)+1;
 
-% test = facebbox;
+test = facebbox;
 
 cnt	= zeros(nfacebbox);
 for k=1 : nfacebbox
@@ -69,9 +61,13 @@ for k=1 : nfacebbox
     if( nnosebbox ) cnt(k) = cnt(k)+1; end
 end
 
-[ii, ~] = find(cnt == max(max(cnt)));
-facebbox = facebbox(ii, :);
+[ii, ~]	= find(cnt == max(max(cnt)));
+if( size(ii,1) == 1 )
+    facebbox	= facebbox(ii, :);
+else
+    disp('hi');
+    facebbox    = oldbbox;
+end
 
-% if( size(facebbox, 1) ~= 1 )
-%     disp('hi');
-% end
+
+

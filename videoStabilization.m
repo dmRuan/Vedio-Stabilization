@@ -1,6 +1,9 @@
 function v = videoStabilization(v, hVideoSrc)
 
 %% initialization
+lowerFaceThr	= 1;
+upperFaceThr    = 10;
+startThr        = 4;
 bboxB = [];
 nFrames         = hVideoSrc.NumberOfFrames;
 
@@ -8,7 +11,7 @@ nFrames         = hVideoSrc.NumberOfFrames;
 v(1).cdata  = read(hVideoSrc, 1);
 imgB        = rgb2gray(v(1).cdata);
 % translate the image
-facebbox	= getfacebbox(imgB);
+facebbox	= getfacebbox(imgB, startThr, lowerFaceThr, upperFaceThr);
 imgB        = pullNoseMid(imgB, facebbox);
 % for iteration
 imgA	= imgB;
@@ -19,6 +22,7 @@ v(1).ans	= pullNoseMid(v(1).cdata, facebbox);
 %% show time
 for i=2 : nFrames
     dispSchedule(i, nFrames);
+    disp(i);
     
     v(i).cdata	= read(hVideoSrc, i);
     imgB        = rgb2gray(v(i).cdata);
@@ -30,8 +34,8 @@ for i=2 : nFrames
     
 %% collect salient points from each frame
     % Detect feature points in the face region.
-    bboxA = getfacebbox(imgA, bboxB);
-    bboxB = getfacebbox(imgB, bboxB);
+    bboxA = getfacebbox(imgA, startThr, lowerFaceThr, upperFaceThr, bboxB);
+    bboxB = getfacebbox(imgB, startThr, lowerFaceThr, upperFaceThr, bboxB);
     
     pointsA	= detectMinEigenFeatures(imgA, 'ROI', bboxA, 'MinQuality', 0.0001);
     pointsB	= detectMinEigenFeatures(imgB, 'ROI', bboxB, 'MinQuality', 0.0001);
@@ -89,10 +93,10 @@ for i=2 : nFrames
 
 %         imgBold	= imwarp(imgB, tform, 'OutputView', imref2d(size(imgB)));
         imgBsRt = imwarp(imgB, tformsRT, 'OutputView', imref2d(size(imgB)));
-        imgBsRt = pullNoseMid(imgBsRt, bboxB);
+        [imgBsRt, move] = pullNoseMid(imgBsRt, bboxB);
         
         imgsRt      = imwarp(v(i).cdata, tformsRT, 'OutputView', imref2d(size(v(i).cdata)));
-        v(i).ans	= pullNoseMid(imgsRt, bboxB);
+        [v(i).ans, ~]	= pullNoseMid(imgsRt, bboxB, move);
 
 %         display
 %         figure(2), clf;
@@ -101,9 +105,9 @@ for i=2 : nFrames
 
         after	= imgBsRt;
     else        
-        imgB        = pullNoseMid(imgB, bboxB);
-        after       = imgB;
-        v(i).ans	= imgB;
+        [imgB, move]        = pullNoseMid(imgB, bboxB);
+        after               = imgB;
+        [v(i).ans, move]	= pullNoseMid(v(i).ans, bboxB, move);
     end
     
     imgA	= after;
